@@ -8,6 +8,7 @@ from pathlib import Path # Use pathlib
 # Assume configure_logging expects a 'verbose' boolean argument
 from shared.utils.logging_utils import configure_logging, get_logger
 from .crew import SequentialPRCrew
+from .hierarchical_crew import HierarchicalPRCrew
 
 logger = get_logger(__name__)
 
@@ -21,6 +22,12 @@ def main():
     parser.add_argument('--output-dir', type=str, default='outputs', help='Directory to save output files')
     parser.add_argument('--verbose', '-v', action='count', default=0, help='Increase verbosity level (e.g., -v, -vv)')
     parser.add_argument("--manager-llm", default="gpt-4o", help="LLM model to use for the manager agent/process.")
+    parser.add_argument(
+        "--mode",
+        choices=["sequential", "hierarchical"],
+        default="sequential",
+        help="Choose which crew workflow to run.",
+    )
     args = parser.parse_args()
 
     # --- FIX IS HERE ---
@@ -32,6 +39,9 @@ def main():
 
     # Determine crew verbosity level (0, 1, or 2)
     crew_verbose_level = min(args.verbose, 2) # Cap at 2 for crewAI
+
+    selected_mode = args.mode
+    logger.info(f"Selected workflow mode: {selected_mode}")
 
     # Validate repository path
     repo_path = Path(args.repo_path).resolve()
@@ -63,17 +73,26 @@ def main():
             inputs['max_files'] = args.max_files
             logger.info(f"Setting max_files={args.max_files} in inputs")
 
-        # Instantiate the crew with parsed arguments
-        crew_instance = SequentialPRCrew(
-            repo_path=str(repo_path),
-            max_files=args.max_files,
-            max_batch_size=args.max_batch_size,
-            verbose=crew_verbose_level,
-            output_dir=str(output_dir),
-            manager_llm_name=args.manager_llm
-        )
+        # Instantiate the appropriate crew based on --mode
+        if selected_mode == "hierarchical":
+            crew_instance = HierarchicalPRCrew(
+                repo_path=str(repo_path),
+                max_files=args.max_files,
+                max_diff_size=args.max_batch_size,  # reuse batch size as diff size limit
+                verbose=crew_verbose_level,
+                manager_llm_name=args.manager_llm,
+            )
+        else:
+            crew_instance = SequentialPRCrew(
+                repo_path=str(repo_path),
+                max_files=args.max_files,
+                max_batch_size=args.max_batch_size,
+                verbose=crew_verbose_level,
+                output_dir=str(output_dir),
+                manager_llm_name=args.manager_llm,
+            )
 
-        logger.info("Starting Hierarchical PR Recommendation Crew (Hierarchical Process)...")
+        logger.info(f"Starting PR Recommendation Crew in '{selected_mode}' mode …")
         logger.info(f"Using inputs: {inputs}")
         logger.info(f"Manager LLM: {args.manager_llm}")
         # Inputs for the kickoff are now handled by @before_kickoff
